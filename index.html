@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>J&K Delivery Services — AI Phone System</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#080B0F;color:#EEF2FF;font-family:'DM Sans',sans-serif;}
+  input,textarea,select{font-family:'DM Sans',sans-serif;}
+  @keyframes ping{0%,100%{transform:scale(1);opacity:0.4}50%{transform:scale(2.2);opacity:0}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const C = {
+  bg:"#080B0F",sur:"#0E1318",card:"#131920",bor:"#1C2530",
+  acc:"#F5A623",grn:"#00D084",red:"#FF4757",blu:"#3B82F6",
+  pur:"#8B5CF6",txt:"#EEF2FF",mut:"#5A6478",dim:"#2A3545"
+};
+
+const defaultScript = {
+  companyName:"J&K Delivery Services",
+  ownerNumber:"(313) 662-4077",
+  transferNumber:"(313) 662-4077",
+  greeting:"Thank you for calling {companyName}. This is the AI assistant. How can I help you today? Press 0 at any time to speak with the owner.",
+  hiringSpeech:"Yes we are hiring CDL drivers. I can schedule you for orientation. Can I get your full name and best callback number?",
+  hoursSpeech:"Our dispatch is available Monday through Friday 6 AM to 8 PM and Saturday 7 AM to 3 PM.",
+  locationSpeech:"Our main office is located at 4400 Industrial Drive Chicago IL 60601.",
+  transferSpeech:"I will connect you with our dispatch team right away. One moment please.",
+  closingSpeech:"Thank you for calling {companyName}. Have a great day!",
+  bookingConfirm:"You are all set! Your appointment has been booked and you will receive a confirmation shortly.",
+  fallback:"Let me connect you with our team to make sure you get the right help.",
+};
+
+const defaultCalls = [
+  {id:1,caller:"James Mitchell",phone:"(312) 555-0182",time:"Today 9:14 AM",duration:"2m 34s",intent:"Hiring Inquiry",status:"Booked",summary:"Caller asked about Class A openings. Booked orientation Jun 10.",transcript:[{role:"ai",text:"Thank you for calling J&K Delivery Services. How can I help you today?"},{role:"caller",text:"I am looking for a Class A driving job, are you hiring?"},{role:"ai",text:"Yes we are hiring. I can schedule you for orientation. What is your name?"}]},
+  {id:2,caller:"Robert Sims",phone:"(773) 555-0088",time:"Yesterday 11:20 AM",duration:"4m 22s",intent:"Hiring Inquiry",status:"Booked",summary:"Class B driver inquiry. Booked interview for Jun 12.",transcript:[{role:"ai",text:"Thank you for calling J&K Delivery Services. How can I help?"},{role:"caller",text:"I got a Class B CDL and I am looking for work."},{role:"ai",text:"We have Class B openings. Can I get your name and callback number?"}]},
+  {id:3,caller:"Tanya Brooks",phone:"(404) 555-0319",time:"Yesterday 3:45 PM",duration:"3m 08s",intent:"Load/Route Question",status:"Transferred",summary:"Driver asked about load. Transferred to dispatch.",transcript:[{role:"ai",text:"Thank you for calling. How can I help?"},{role:"caller",text:"I need to know about my load tomorrow."},{role:"ai",text:"For load assignments I will connect you with dispatch now."}]},
+];
+
+function Dot({color}){
+  return <div style={{position:"relative",width:10,height:10,flexShrink:0}}>
+    <div style={{width:10,height:10,borderRadius:"50%",background:color,position:"absolute"}}/>
+    <div style={{width:10,height:10,borderRadius:"50%",background:color,position:"absolute",opacity:0.4,animation:"ping 1.5s ease-in-out infinite"}}/>
+  </div>;
+}
+
+function Badge({color,children}){
+  return <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:10,fontWeight:700,background:color+"20",color,letterSpacing:1,textTransform:"uppercase"}}>{children}</span>;
+}
+
+function Input({label,value,onChange,type,placeholder,multi}){
+  return <div style={{marginBottom:14}}>
+    <div style={{fontSize:10,fontWeight:700,letterSpacing:2,color:C.mut,textTransform:"uppercase",marginBottom:6}}>{label}</div>
+    {multi
+      ? <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} style={{width:"100%",background:C.sur,border:`1px solid ${C.bor}`,borderRadius:8,padding:"10px 13px",color:C.txt,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit",resize:"vertical",minHeight:80}}/>
+      : <input type={type||"text"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} style={{width:"100%",background:C.sur,border:`1px solid ${C.bor}`,borderRadius:8,padding:"10px 13px",color:C.txt,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+    }
+  </div>;
+}
+
+function Btn({v,onClick,children,style}){
+  const bg = v==="green"?C.grn:v==="red"?C.red:v==="purple"?C.pur:v==="ghost"?"transparent":C.acc;
+  const col = v==="ghost"?C.mut:"#000";
+  const bor = v==="ghost"?`1px solid ${C.bor}`:"none";
+  return <button onClick={onClick} style={{padding:"10px 20px",borderRadius:8,border:bor,cursor:"pointer",fontSize:13,fontWeight:700,background:bg,color:col,...style}}>{children}</button>;
+}
+
+// ── LIVE VOICE ──────────────────────────────────────────────────────────────
+function LiveVoice({script, vapiKey, assistantId, onNewCall}){
+  const [state,setState] = useState("idle");
+  const [lines,setLines] = useState([]);
+  const [dur,setDur] = useState(0);
+  const [intent,setIntent] = useState("");
+  const [err,setErr] = useState("");
+  const [speaking,setSpeaking] = useState(false);
+  const vapiRef = useRef(null);
+  const timerRef = useRef(null);
+  const bottomRef = useRef(null);
+
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"})},[lines]);
+  useEffect(()=>{
+    if(state==="active"){timerRef.current=setInterval(()=>setDur(d=>d+1),1000);}
+    else{clearInterval(timerRef.current);if(state==="idle")setDur(0);}
+    return()=>clearInterval(timerRef.current);
+  },[state]);
+
+  const fmt=(s)=>`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  const addLine=useCallback((role,text)=>setLines(p=>[...p,{role,text,id:Date.now()+Math.random()}]),[]);
+
+  const startCall=useCallback(async()=>{
+    if(!vapiKey){setErr("Please enter your Vapi Public Key and click Save first.");return;}
+    setErr("");setState("connecting");setLines([]);setDur(0);setIntent("");
+    try{
+      // Load Vapi SDK
+      if(!window.Vapi){
+        await new Promise((res,rej)=>{
+          const el=document.createElement("script");
+          el.src="https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.3.3/dist/vapi.umd.cjs";
+          el.onload=()=>setTimeout(res,500);
+          el.onerror=()=>rej(new Error("Could not load Vapi. Check internet connection."));
+          document.head.appendChild(el);
+        });
+      }
+      const VapiClass = window.Vapi || (window.vapiSdk && window.vapiSdk.default);
+      if(!VapiClass) throw new Error("Vapi SDK not available. Try refreshing the page.");
+      const vapi = new VapiClass(vapiKey);
+      vapiRef.current=vapi;
+
+      vapi.on("call-start",()=>{setState("active");addLine("system","Call connected — AI is live");});
+      vapi.on("speech-start",()=>setSpeaking(true));
+      vapi.on("speech-end",()=>setSpeaking(false));
+      vapi.on("message",(msg)=>{
+        if(msg.type==="transcript"&&msg.transcriptType==="final"){
+          const role=msg.role==="assistant"?"ai":"caller";
+          addLine(role,msg.transcript);
+          if(role==="caller"){
+            const lo=msg.transcript.toLowerCase();
+            if(lo.includes("hiring")||lo.includes("job")||lo.includes("work"))setIntent("Hiring Inquiry");
+            else if(lo.includes("hours")||lo.includes("location"))setIntent("Hours & Location");
+            else if(lo.includes("load")||lo.includes("route"))setIntent("Load/Route Question");
+            if(lo.trim()==="0"||lo.includes("real person")||lo.includes("talk to")||lo.includes("operator")){
+              addLine("system",`Transferring to owner at ${script.ownerNumber||"owner number not set"}...`);
+              setTimeout(()=>{vapi.stop();setState("transferred");},1500);
+            }
+          }
+        }
+      });
+      vapi.on("call-end",()=>{
+        setState("ended");setSpeaking(false);
+        onNewCall({caller:"Live Caller",phone:"Via Vapi",intent:intent||"General Inquiry",status:"Resolved",summary:"Live voice call completed."});
+      });
+      vapi.on("error",(e)=>{
+        const m=e?.message||"";
+        if(m.includes("401")||m.includes("unauthorized"))setErr("Invalid API key. Use your Vapi PUBLIC key.");
+        else if(m.includes("microphone"))setErr("Microphone permission denied. Please allow microphone access.");
+        else setErr("Error: "+(m||"Check your public key and assistant ID."));
+        setState("idle");
+      });
+
+      if(assistantId){await vapi.start(assistantId);}
+      else{
+        await vapi.start({
+          transcriber:{provider:"deepgram",model:"nova-2",language:"en-US"},
+          model:{provider:"openai",model:"gpt-4o-mini",messages:[{role:"system",content:`You are a professional AI phone receptionist for ${script.companyName}. Be warm and concise. Start with: "${script.greeting.replace("{companyName}",script.companyName)}". Hiring questions: ${script.hiringSpeech}. Hours: ${script.hoursSpeech}. Location: ${script.locationSpeech}. Routes/dispatch: ${script.transferSpeech}. VERY IMPORTANT: If the caller says 0, presses 0, says operator, says real person, says talk to someone, or says speak to the owner — you MUST say exactly this: "One moment please, I am connecting you with the owner at J&K Delivery Services right now. Please hold." then immediately end the call. The owner will call them back. Closing: ${script.closingSpeech.replace("{companyName}",script.companyName)}`}]},
+          voice:{provider:"11labs",voiceId:"21m00Tcm4TlvDq8ikWAM"},
+          firstMessage:script.greeting.replace("{companyName}",script.companyName),
+        });
+      }
+    }catch(e){setErr(e.message||"Could not start call. Check your Vapi Public Key.");setState("idle");}
+  },[vapiKey,assistantId,script,intent,addLine,onNewCall]);
+
+  const endCall=()=>{if(vapiRef.current)vapiRef.current.stop();setState("ended");setSpeaking(false);};
+  const reset=()=>{setState("idle");setLines([]);setIntent("");setErr("");setDur(0);};
+
+  return <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+      <div>
+        <div style={{fontSize:15,fontWeight:700,marginBottom:4}}>Live Voice AI — Powered by Vapi</div>
+        <div style={{fontSize:12,color:C.mut}}>Real voice. Real AI. Caller speaks, AI listens and responds live.</div>
+      </div>
+      <Badge color={state==="active"?C.grn:state==="connecting"?C.acc:state==="transferred"?C.pur:state==="ended"?C.mut:C.dim}>
+        {state==="active"?"● LIVE":state==="connecting"?"CONNECTING...":state==="transferred"?"TRANSFERRED":state==="ended"?"ENDED":"READY"}
+      </Badge>
+    </div>
+
+    {err&&<div style={{background:C.red+"15",border:`1px solid ${C.red}40`,borderRadius:10,padding:"12px 16px",marginBottom:14,color:C.red,fontSize:13}}>
+      {err}<button onClick={()=>setErr("")} style={{float:"right",background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:18,lineHeight:1}}>✕</button>
+    </div>}
+
+    {state==="idle"&&<div style={{textAlign:"center",padding:"40px 0"}}>
+      <div style={{fontSize:52,marginBottom:16}}>📞</div>
+      <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Start a Live AI Voice Call</div>
+      <div style={{fontSize:13,color:C.mut,marginBottom:28}}>Your microphone activates. AI answers and speaks in real time.</div>
+      <Btn v="green" onClick={startCall} style={{padding:"14px 44px",fontSize:14}}>🎙 Start Live Voice Call</Btn>
+      <div style={{fontSize:11,color:C.mut,marginTop:12}}>Requires microphone · Powered by Vapi + ElevenLabs</div>
+    </div>}
+
+    {state==="connecting"&&<div style={{textAlign:"center",padding:"40px 0"}}>
+      <div style={{fontSize:40,marginBottom:14,animation:"spin 1s linear infinite",display:"inline-block"}}>⏳</div>
+      <div style={{fontSize:14,fontWeight:700,color:C.acc,marginTop:8}}>Connecting to AI Voice...</div>
+      <div style={{fontSize:12,color:C.mut,marginTop:6}}>Loading voice model · Enabling microphone</div>
+    </div>}
+
+    {(state==="active"||state==="ended")&&<>
+      {state==="active"&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sur,borderRadius:10,padding:"12px 16px",marginBottom:14,border:`1px solid ${C.grn}30`}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><Dot color={C.grn}/><div style={{fontSize:13,fontWeight:700,color:C.grn}}>{speaking?"AI IS SPEAKING...":"AI IS LISTENING..."}</div></div>
+        <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace"}}>{fmt(dur)}</div>
+      </div>}
+
+      <div style={{background:C.sur,borderRadius:10,padding:16,height:260,overflowY:"auto",marginBottom:14,border:`1px solid ${C.bor}`}}>
+        {lines.length===0&&<div style={{textAlign:"center",color:C.mut,fontSize:13,paddingTop:80}}>Transcript appears here as conversation happens...</div>}
+        {lines.map((l,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:l.role==="caller"?"flex-end":l.role==="system"?"center":"flex-start",marginBottom:10}}>
+            {l.role==="system"
+              ?<div style={{fontSize:11,color:C.mut,fontStyle:"italic"}}>{l.text}</div>
+              :<div style={{maxWidth:"78%"}}>
+                <div style={{fontSize:10,fontWeight:700,color:l.role==="ai"?C.acc:C.blu,letterSpacing:1,marginBottom:4}}>{l.role==="ai"?"AI ASSISTANT":"CALLER"}</div>
+                <div style={{background:l.role==="ai"?C.acc+"15":C.blu+"15",border:`1px solid ${l.role==="ai"?C.acc+"30":C.blu+"30"}`,borderRadius:8,padding:"10px 13px",fontSize:13,lineHeight:1.5}}>{l.text}</div>
+              </div>
+            }
+          </div>
+        ))}
+        <div ref={bottomRef}/>
+      </div>
+
+      {intent&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:12,color:C.mut}}>Detected intent:</span><Badge color={C.pur}>{intent}</Badge></div>}
+
+      {state==="active"&&<div style={{display:"flex",gap:10}}>
+        <button onClick={()=>{addLine("system",`Transferring to owner at ${script.ownerNumber||"not set"}...`);if(vapiRef.current)vapiRef.current.stop();setState("transferred");}} style={{flex:1,background:C.pur+"18",border:`1px solid ${C.pur}40`,borderRadius:8,padding:11,cursor:"pointer",color:C.pur,fontSize:13,fontWeight:700}}>☎ Press 0 — Transfer to Owner</button>
+        <Btn v="red" onClick={endCall} style={{padding:"11px 20px"}}>End Call</Btn>
+      </div>}
+      {state==="ended"&&<Btn v="ghost" onClick={reset} style={{width:"100%",padding:12}}>Start New Call</Btn>}
+    </>}
+
+    {state==="transferred"&&<div style={{textAlign:"center",padding:32}}>
+      <div style={{fontSize:44,marginBottom:14}}>☎️</div>
+      <div style={{fontSize:15,fontWeight:700,color:C.pur,marginBottom:6}}>Connected to Owner</div>
+      <div style={{fontSize:13,color:C.mut,marginBottom:8}}>Caller is now speaking with the owner</div>
+      <div style={{fontSize:16,fontWeight:700,marginBottom:20}}>{script.ownerNumber||"Set owner number in Script Builder"}</div>
+      <Btn v="ghost" onClick={reset}>End & Start New Call</Btn>
+    </div>}
+  </div>;
+}
+
+// ── PAGES ────────────────────────────────────────────────────────────────────
+function LiveCallPage({script,onNewCall}){
+  const [vapiKey,setVapiKey] = useState(localStorage.getItem("vapi_key")||"");
+  const [assistantId,setAssistantId] = useState(localStorage.getItem("vapi_assistant_id")||"");
+  const [saved,setSaved] = useState(!!localStorage.getItem("vapi_key"));
+
+  const save=()=>{
+    localStorage.setItem("vapi_key",vapiKey);
+    localStorage.setItem("vapi_assistant_id",assistantId);
+    setSaved(true);
+  };
+
+  return <>
+    <div style={{background:C.card,border:`1px solid ${saved?C.grn+"40":C.acc+"40"}`,background:saved?C.grn+"08":C.acc+"08",borderRadius:12,padding:22,marginBottom:20}}>
+      <div style={{fontSize:14,fontWeight:700,color:saved?C.grn:C.acc,marginBottom:8}}>{saved?"✓ Vapi Connected — Ready to Call":"Connect Your Vapi Account"}</div>
+      <div style={{fontSize:12,color:C.mut,marginBottom:16}}>{saved?"Your key is saved. You can update it below.":"Paste your Vapi Public Key below. Get it at vapi.ai → API Keys."}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+        <Input label="Vapi Public Key" type="password" value={vapiKey} onChange={setVapiKey} placeholder="Paste your Vapi Public Key here"/>
+        <Input label="Assistant ID (optional)" value={assistantId} onChange={setAssistantId} placeholder="From Vapi Assistants page"/>
+      </div>
+      <Btn onClick={save}>Save & Connect</Btn>
+      {saved&&<span style={{fontSize:12,color:C.grn,marginLeft:12,fontWeight:600}}>✓ Saved</span>}
+    </div>
+    <LiveVoice script={script} vapiKey={vapiKey} assistantId={assistantId} onNewCall={onNewCall}/>
+    <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22}}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>How to Go Live — 3 Steps</div>
+      {[
+        {n:"1",title:"Get Your Vapi Public Key",desc:"Go to vapi.ai → Sign in → Click API Keys → Copy your Public Key",color:C.acc},
+        {n:"2",title:"Get Your Assistant ID",desc:"In Vapi → Click Assistants → Click your assistant → Copy the ID at the top",color:C.blu},
+        {n:"3",title:"Paste Both Above & Save",desc:"Paste Public Key and Assistant ID above → Click Save & Connect → Hit Start Live Voice Call",color:C.grn},
+      ].map(item=>(
+        <div key={item.n} style={{display:"flex",gap:14,padding:"14px 0",borderBottom:`1px solid ${C.bor}20`,alignItems:"flex-start"}}>
+          <div style={{width:30,height:30,borderRadius:"50%",background:item.color+"20",border:`1px solid ${item.color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:item.color,flexShrink:0}}>{item.n}</div>
+          <div><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>{item.title}</div><div style={{fontSize:12,color:C.mut,lineHeight:1.6}}>{item.desc}</div></div>
+        </div>
+      ))}
+    </div>
+  </>;
+}
+
+function Dashboard({calls}){
+  const intents=calls.reduce((a,c)=>{a[c.intent]=(a[c.intent]||0)+1;return a;},{});
+  return <>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
+      {[{l:"Total Calls",v:calls.length,c:C.blu},{l:"Booked",v:calls.filter(c=>c.status==="Booked").length,c:C.grn},{l:"Resolved by AI",v:calls.filter(c=>c.status==="Resolved").length,c:C.acc},{l:"Transferred",v:calls.filter(c=>c.status==="Transferred").length,c:C.pur}].map(st=>(
+        <div key={st.l} style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:10,padding:18,borderTop:`3px solid ${st.c}`}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:C.mut,textTransform:"uppercase",marginBottom:8}}>{st.l}</div>
+          <div style={{fontSize:32,fontWeight:700,color:st.c,lineHeight:1}}>{st.v}</div>
+        </div>
+      ))}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Recent Calls</div>
+        {calls.slice(0,6).map(c=>(
+          <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${C.bor}20`}}>
+            <div><div style={{fontSize:14,fontWeight:600}}>{c.caller}</div><div style={{fontSize:12,color:C.mut}}>{c.phone} · {c.time}</div></div>
+            <Badge color={c.status==="Booked"?C.grn:c.status==="Resolved"?C.acc:C.pur}>{c.status}</Badge>
+          </div>
+        ))}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Call Intents</div>
+        {Object.entries(intents).map(([intent,count])=>(
+          <div key={intent} style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><div style={{fontSize:13}}>{intent}</div><div style={{fontSize:13,color:C.acc,fontWeight:700}}>{count}</div></div>
+            <div style={{background:C.bor,borderRadius:99,height:5}}><div style={{background:C.acc,borderRadius:99,height:5,width:`${(count/calls.length)*100}%`}}/></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </>;
+}
+
+function CallLog({calls}){
+  const [sel,setSel]=useState(null);
+  return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+    <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22}}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>All Calls ({calls.length})</div>
+      {calls.map(c=>(
+        <div key={c.id} onClick={()=>setSel(c)} style={{padding:13,borderRadius:8,marginBottom:8,cursor:"pointer",background:sel?.id===c.id?C.acc+"15":C.sur,border:`1px solid ${sel?.id===c.id?C.acc+"40":C.bor}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontSize:14,fontWeight:600}}>{c.caller}</div><Badge color={c.status==="Booked"?C.grn:c.status==="Resolved"?C.acc:C.pur}>{c.status}</Badge></div>
+          <div style={{fontSize:12,color:C.mut}}>{c.phone} · {c.time} · {c.duration}</div>
+          <div style={{fontSize:12,color:C.blu,marginTop:3}}>{c.intent}</div>
+        </div>
+      ))}
+    </div>
+    <div>
+      {sel?<div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
+          <div><div style={{fontSize:15,fontWeight:700}}>{sel.caller}</div><div style={{fontSize:12,color:C.mut}}>{sel.phone} · {sel.time}</div></div>
+          <Badge color={sel.status==="Booked"?C.grn:sel.status==="Resolved"?C.acc:C.pur}>{sel.status}</Badge>
+        </div>
+        <div style={{background:C.sur,borderRadius:8,padding:13,marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:C.mut,marginBottom:6}}>AI SUMMARY</div>
+          <div style={{fontSize:13,lineHeight:1.6}}>{sel.summary}</div>
+        </div>
+        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:C.mut,marginBottom:10}}>TRANSCRIPT</div>
+        <div style={{background:C.sur,borderRadius:8,padding:14,maxHeight:280,overflowY:"auto",border:`1px solid ${C.bor}`}}>
+          {sel.transcript.map((l,i)=>(
+            <div key={i} style={{marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:l.role==="ai"?C.acc:C.blu,letterSpacing:1,marginBottom:3}}>{l.role==="ai"?"AI ASSISTANT":"CALLER"}</div>
+              <div style={{fontSize:13,lineHeight:1.5,paddingLeft:8,borderLeft:`2px solid ${l.role==="ai"?C.acc+"40":C.blu+"40"}`}}>{l.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>:<div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,textAlign:"center",paddingTop:60}}>
+        <div style={{fontSize:32,marginBottom:10}}>📋</div>
+        <div style={{fontSize:13,color:C.mut}}>Select a call to view transcript</div>
+      </div>}
+    </div>
+  </div>;
+}
+
+function ScriptBuilder({script,setScript}){
+  const [local,setLocal]=useState({...script});
+  const [saved,setSaved]=useState(false);
+  const update=(k,v)=>setLocal(p=>({...p,[k]:v}));
+  const save=()=>{setScript(local);setSaved(true);setTimeout(()=>setSaved(false),3000);};
+
+  return <>
+    {saved&&<div style={{background:C.grn+"20",border:`1px solid ${C.grn}40`,borderRadius:10,padding:"13px 18px",marginBottom:16,color:C.grn,fontSize:13,fontWeight:700}}>Script saved successfully.</div>}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <div>
+        <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Company Info</div>
+          <Input label="Company Name" value={local.companyName} onChange={v=>update("companyName",v)}/>
+          <Input label="Owner Direct Number (Press 0)" value={local.ownerNumber} onChange={v=>update("ownerNumber",v)} placeholder="Your phone number"/>
+          <Input label="Dispatch / Transfer Number" value={local.transferNumber} onChange={v=>update("transferNumber",v)} placeholder="Dispatch phone number"/>
+          <div style={{background:C.sur,border:`1px solid ${C.pur}40`,borderRadius:8,padding:"11px 13px"}}>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:C.pur,marginBottom:4}}>PRESS 0 RULE</div>
+            <div style={{fontSize:12,color:C.mut,lineHeight:1.6}}>When caller presses 0 or says "real person" — AI transfers directly to owner number above.</div>
+          </div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Greeting & Closing</div>
+          <Input label="Opening Greeting" value={local.greeting} onChange={v=>update("greeting",v)} multi/>
+          <Input label="Closing Statement" value={local.closingSpeech} onChange={v=>update("closingSpeech",v)} multi/>
+          <Input label="Booking Confirmation" value={local.bookingConfirm} onChange={v=>update("bookingConfirm",v)} multi/>
+          <Input label="Fallback Response" value={local.fallback} onChange={v=>update("fallback",v)} multi/>
+        </div>
+      </div>
+      <div>
+        <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Hiring Inquiries</div>
+          <div style={{fontSize:12,color:C.mut,marginBottom:12}}>Triggered when caller asks about jobs</div>
+          <Input label="Hiring Response" value={local.hiringSpeech} onChange={v=>update("hiringSpeech",v)} multi/>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Hours & Location</div>
+          <Input label="Hours Response" value={local.hoursSpeech} onChange={v=>update("hoursSpeech",v)} multi/>
+          <Input label="Location Response" value={local.locationSpeech} onChange={v=>update("locationSpeech",v)} multi/>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.bor}`,borderRadius:12,padding:22,marginBottom:18}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Transfer / Dispatch</div>
+          <Input label="Transfer Message" value={local.transferSpeech} onChange={v=>update("transferSpeech",v)} multi/>
+        </div>
+      </div>
+    </div>
+    <Btn onClick={save} style={{padding:"13px 36px"}}>Save Script</Btn>
+  </>;
+}
+
+// ── APP ──────────────────────────────────────────────────────────────────────
+function App(){
+  const [page,setPage]=useState("Dashboard");
+  const [open,setOpen]=useState(false);
+  const [calls,setCalls]=useState(defaultCalls);
+  const [script,setScript]=useState(defaultScript);
+  const addCall=(c)=>setCalls(p=>[{id:p.length+1,duration:"—",time:"Just now",transcript:[],...c},...p]);
+
+  const nav=[{k:"Dashboard",i:"⬛"},{k:"Live Call",i:"🎙"},{k:"Call Log",i:"📋"},{k:"Script Builder",i:"✏️"}];
+
+  return <div style={{fontFamily:"'DM Sans',sans-serif",background:C.bg,minHeight:"100vh",color:C.txt}}>
+    {open&&<>
+      <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:99}}/>
+      <div style={{position:"fixed",top:0,left:0,width:220,height:"100vh",background:C.sur,borderRight:`1px solid ${C.bor}`,display:"flex",flexDirection:"column",zIndex:100,boxShadow:"4px 0 30px rgba(0,0,0,0.6)"}}>
+        <div style={{padding:"20px 18px",borderBottom:`1px solid ${C.bor}`}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:3,color:C.acc,textTransform:"uppercase"}}>J&K Delivery Services</div>
+          <div style={{fontSize:16,fontWeight:700,marginTop:3}}>AI Phone System</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:10}}><Dot color={C.grn}/><span style={{fontSize:12,color:C.grn,fontWeight:600}}>System Active</span></div>
+        </div>
+        <div style={{padding:"10px 0",flex:1}}>
+          {nav.map(n=>(
+            <button key={n.k} onClick={()=>{setPage(n.k);setOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",cursor:"pointer",border:"none",width:"100%",textAlign:"left",background:page===n.k?C.acc+"18":"transparent",color:page===n.k?C.acc:C.mut,fontSize:13,fontWeight:page===n.k?700:400,borderLeft:page===n.k?`3px solid ${C.acc}`:"3px solid transparent"}}>
+              <span>{n.i}</span>{n.k}
+            </button>
+          ))}
+        </div>
+        <div style={{padding:"16px 18px",borderTop:`1px solid ${C.bor}`,fontSize:12,color:C.mut}}>Powered by Chedda Mane AI</div>
+      </div>
+    </>}
+
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 28px",borderBottom:`1px solid ${C.bor}`,background:C.sur,position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <button onClick={()=>setOpen(true)} style={{background:"transparent",border:`1px solid ${C.bor}`,borderRadius:7,color:C.mut,cursor:"pointer",fontSize:18,padding:"5px 11px"}}>☰</button>
+        <div style={{fontSize:17,fontWeight:700}}>{page}</div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:C.grn+"15",border:`1px solid ${C.grn}30`,borderRadius:20,padding:"6px 14px"}}>
+        <Dot color={C.grn}/><span style={{fontSize:12,color:C.grn,fontWeight:700}}>AI ANSWERING</span>
+      </div>
+    </div>
+
+    <div style={{padding:28}}>
+      {page==="Dashboard"&&<Dashboard calls={calls}/>}
+      {page==="Live Call"&&<LiveCallPage script={script} onNewCall={addCall}/>}
+      {page==="Call Log"&&<CallLog calls={calls}/>}
+      {page==="Script Builder"&&<ScriptBuilder script={script} setScript={setScript}/>}
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
