@@ -1,0 +1,70 @@
+# CDL Connect — AI Phone System
+## Deploy to Live Website in 15 Minutes
+
+---
+
+## STEP 1 — Install Node.js
+Go to: https://nodejs.org
+Download and install the LTS version (the green button)
+
+---
+
+## STEP 2 — Open Terminal / Command Prompt
+- Windows: Press Windows key, type "cmd", hit Enter
+- Mac: Press Cmd + Space, type "terminal", hit Enter
+
+---
+
+## STEP 3 — Run These Commands One at a Time
+
+```
+cd Desktop
+cd cdl-connect
+npm install
+npm run build
+```
+
+Wait for each one to finish before typing the next.
+
+---
+
+## STEP 4 — Deploy to Vercel (Free Hosting)
+
+1. Go to: https://vercel.com
+2. Click "Sign Up" — use your GitHub or Google account
+3. Click "Add New Project"
+4. Drag the entire "cdl-connect" folder into Vercel
+5. Click "Deploy"
+6. In about 2 minutes Vercel gives you a live URL like:
+   https://cdl-connect-yourname.vercel.app
+
+---
+
+## STEP 5 — Connect Your Vapi Key
+
+1. Open your live URL
+2. Click the menu (☰) → Live Call
+3. Paste your Vapi Public Key
+4. Paste your Assistant ID
+5. Click Save & Connect
+6. Hit Start Live Voice Call
+
+---
+
+## YOUR LIVE DEMO IS READY TO SEND TO CLIENTS
+
+Send them the Vercel URL.
+They can see the dashboard, call log, and AI phone system.
+Once they pay you, update the Script Builder with their company info.
+
+---
+
+## WHAT TO CHARGE CLIENTS
+
+- AI Phone System only: $150–300/month
+- Full CDL Portal + AI Phone: $1,500/month
+- Setup fee (one time): $500
+
+---
+
+Powered by Chedda Mane Films AI Services
